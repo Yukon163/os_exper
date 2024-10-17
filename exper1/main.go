@@ -163,5 +163,8 @@ func main() {
 	showCPU(&cpu)
 	showPCB(pcb1)
 	processIn(&cpu, pcb1)
+}
+
+func test() {
 
 }
