@@ -3,8 +3,11 @@ package main
 import (
 	"fmt"
 	"math/rand"
+	//"sync"
 	"time"
 )
+
+var timeNow int
 
 type status int
 
@@ -33,60 +36,57 @@ func GenerateRandInt(n int) int {
 }
 
 type PCB struct {
-	name        string
-	prior       int // 优先级 优先数？
-	arrive_time int64
-	exec_time   int64
-	used_time   int64
-	PCBStatus   status
-}
-
-func getArriveTime(pcb PCB) string {
-	return time.Unix(0, pcb.arrive_time).Format("2006-01-02 15:04:05")
-}
-
-func UnixTime2S(time1 int64) string {
-	return time.Unix(0, time1).Format("2006-01-02 15:04:05")
+	name       string
+	prior      int // 优先级 优先数？
+	arriveTime int
+	execTime   int64
+	usedTime   int64
+	PCBStatus  status
 }
 
 func showPCB(pcb PCB) {
-	fmt.Printf("Process Name:%s, Status: %s\n", pcb.name, pcb.PCBStatus)
+	fmt.Printf("Process Name: %s, PCBStatus: %s\n", pcb.name, pcb.PCBStatus)
 }
 
-type CPU_Process_Scheduler struct {
-	processes_queue []PCB
-	cpuStatus       status
+type CpuProcessScheduler struct {
+	processesQueue []PCB
+	cpuStatus      status
 }
 
-func InQueue(cpu *CPU_Process_Scheduler, pcb PCB) {
-
-	fmt.Printf("")
-	cpu.processes_queue = append([]PCB{pcb}, cpu.processes_queue...) // 用于在开头插入pcb以模拟队列
+func InQueue(cpu *CpuProcessScheduler, pcb PCB) {
+	//fmt.Printf("Process: %s move into queue", pcb.name)
+	cpu.processesQueue = append(cpu.processesQueue, pcb)
 }
 
-func OutQueue(cpu *CPU_Process_Scheduler, pcb PCB) {
-	for i, process := range cpu.processes_queue {
+func OutQueue(cpu *CpuProcessScheduler, pcb PCB) {
+	for i, process := range cpu.processesQueue {
 		if process.name == pcb.name {
-			cpu.processes_queue = append(cpu.processes_queue[:i], cpu.processes_queue[i+1:]...)
-			fmt.Printf("Process %s removed from queue\n", pcb.name)
+			cpu.processesQueue = append(cpu.processesQueue[:i], cpu.processesQueue[i+1:]...)
+			//fmt.Printf("Process: %s removed from queue\n", pcb.name)
 			break
 		}
 	}
 }
 
-func getCpuProcessQueue(cpu *CPU_Process_Scheduler) {
-	for i, pcb := range cpu.processes_queue {
-		fmt.Printf("Process %d: %s\n", i, pcb.name)
+func showCpuProcessQueue(cpu *CpuProcessScheduler) {
+	fmt.Printf("Now, the CPU's process_queue is:\n")
+	if len(cpu.processesQueue) == 0 {
+		for i, pcb := range cpu.processesQueue {
+			fmt.Printf("%d: ", i)
+			showPCB(pcb)
+		}
+	} else {
+
 	}
 }
 
-func findHighestPriorProcess(cpu *CPU_Process_Scheduler) PCB {
-	if len(cpu.processes_queue) == 0 {
+func findHighestPriorProcess(cpu *CpuProcessScheduler) PCB {
+	if len(cpu.processesQueue) == 0 {
 		fmt.Printf("No processes queue\n")
 	}
 
-	highestPriorProcess := cpu.processes_queue[0]
-	for _, process := range cpu.processes_queue {
+	highestPriorProcess := cpu.processesQueue[0]
+	for _, process := range cpu.processesQueue {
 		if process.prior > highestPriorProcess.prior {
 			highestPriorProcess = process
 		}
@@ -94,77 +94,80 @@ func findHighestPriorProcess(cpu *CPU_Process_Scheduler) PCB {
 	return highestPriorProcess
 }
 
-func showCPU(cpu *CPU_Process_Scheduler) {
+func showCPU(cpu *CpuProcessScheduler) {
 	fmt.Printf("CPUStatus: %s\n", cpu.cpuStatus)
 }
 
-func CpuHandleProcess(cpu *CPU_Process_Scheduler) {
-	pcb := findHighestPriorProcess(cpu)
-	arrivalTime := getArriveTime(pcb)
-	handleTime := time.Unix(0, time.Now().UnixNano()).Format("2006-01-02 15:04:05")
-	fmt.Printf("\nCPU Status: %s->Run\nhandling process: %s at %s, arriving at %s, enter to the processes_queue...\n", cpu.cpuStatus, pcb.name, handleTime, arrivalTime)
-	fmt.Printf("start process: %s...\n", pcb.name)
+func stimulateCpuExecTime(pcb PCB) {
 	time.Sleep(10) // 模拟cpu执行进程花费的时间片
-	pcb.used_time += 1
-	if pcb.used_time < pcb.exec_time {
-		fmt.Printf("process still need to exec %d time\n", pcb.exec_time-pcb.used_time)
+	pcb.usedTime += 1
+	timeNow += 1
+}
+
+func changeCpuStatus(cpu *CpuProcessScheduler, statusToChange status) {
+	fmt.Printf("\nCPU Status: %s->%s \n", cpu.cpuStatus, statusToChange)
+	cpu.cpuStatus = Run
+}
+
+func CpuHandleProcess(cpu *CpuProcessScheduler) {
+	pcb := findHighestPriorProcess(cpu)
+	OutQueue(cpu, pcb)
+
+	arrivalTime := pcb.arriveTime
+	handleTime := timeNow
+
+	changeCpuStatus(cpu, Run)
+	fmt.Printf("handling process: %s at %d, arriving at %d, enter to the processes_queue...\n", pcb.name, handleTime, arrivalTime)
+
+	fmt.Printf("start process: %s...\n", pcb.name)
+	stimulateCpuExecTime(pcb)
+	if pcb.usedTime < pcb.execTime {
+		fmt.Printf("process still need to exec %d time\n", pcb.execTime-pcb.usedTime)
 		pcb.prior -= 1
-		cpu.cpuStatus = Wait
-		OutQueue(cpu, pcb)
-		//process_in(cpu, pcb)
 	} else {
 		fmt.Printf("process:%s is finished\n", pcb.name)
 		pcb.PCBStatus = Finish
 	}
+	changeCpuStatus(cpu, Wait)
+	showCpuProcessQueue(cpu)
 }
 
-func processIn(cpu *CPU_Process_Scheduler, pcb PCB) {
-	pcb.arrive_time = time.Now().UnixNano()
-	//arrivalTime := getArriveTime(pcb)
+func processIn(cpu *CpuProcessScheduler, pcb PCB) {
+	pcb.arriveTime = timeNow
 	InQueue(cpu, pcb)
-	if cpu.cpuStatus == Wait && pcb.PCBStatus == Wait {
-		cpu.cpuStatus = Run
-		//processToHandle := findHighestPriorProcess(cpu)
-		//fmt.Printf("start process: %s...\n", processToHandle.name)
-		go CpuHandleProcess(cpu)
-	} else if cpu.cpuStatus == Wait && cpu.processes_queue != nil {
-		//processToHandle := findHighestPriorProcess(cpu)
-		//fmt.Printf("start process: %s...\n", processToHandle.name)
+	fmt.Printf("CPU Status: %s...\nProcess: %s enter to the processes_queue...\n", cpu.cpuStatus, pcb.name)
+
+	if cpu.cpuStatus == Wait {
+		//go CpuHandleProcess(cpu)
 		CpuHandleProcess(cpu)
 	} else if cpu.cpuStatus == Run {
 		fmt.Printf("CPU Status: %s...\nprocess: %s enter to the processes_queue...\n", cpu.cpuStatus, pcb.name)
-		cpu.processes_queue = append(cpu.processes_queue, pcb)
-		fmt.Printf("Now, the CPU's process_queue is:\n")
-		getCpuProcessQueue(cpu)
+		showCpuProcessQueue(cpu)
 	} else {
-		fmt.Printf("wt?cpu seems to be wrong, just check it's status\n")
+		fmt.Printf("wt? cpu seems to be wrong, just check it's status\n")
 	}
 }
 
-func scheduleProcesses(cpu *CPU_Process_Scheduler, pcbs []PCB) {
+func scheduleProcesses(cpu *CpuProcessScheduler, pcbs []PCB) {
 	for _, pcb := range pcbs {
 		go processIn(cpu, pcb)
 	}
 }
 
 func main() {
-	cpu := CPU_Process_Scheduler{
-		processes_queue: nil,
-		cpuStatus:       Wait,
+	cpu := CpuProcessScheduler{
+		processesQueue: nil,
+		cpuStatus:      Wait,
 	}
 	pcb1 := PCB{
-		name:        "process1",
-		prior:       GenerateRandInt(100),
-		arrive_time: 0,
-		exec_time:   10,
-		used_time:   0,
-		PCBStatus:   Wait,
+		name:       "P1",
+		prior:      GenerateRandInt(100),
+		arriveTime: 0,
+		execTime:   10,
+		usedTime:   0,
+		PCBStatus:  Wait,
 	}
-	showCPU(&cpu)
-	showPCB(pcb1)
+	//showCPU(&cpu)
+	//showPCB(pcb1)
 	processIn(&cpu, pcb1)
-}
-
-func test() {
-
 }
