@@ -8,6 +8,7 @@ import (
 )
 
 var timeNow int
+var ch = make(chan bool)
 
 type status int
 
@@ -56,6 +57,7 @@ type CpuProcessScheduler struct {
 func InQueue(cpu *CpuProcessScheduler, pcb PCB) {
 	//fmt.Printf("Process: %s move into queue", pcb.name)
 	cpu.processesQueue = append(cpu.processesQueue, pcb)
+	ch <- true
 }
 
 func OutQueue(cpu *CpuProcessScheduler, pcb PCB) {
@@ -69,14 +71,14 @@ func OutQueue(cpu *CpuProcessScheduler, pcb PCB) {
 }
 
 func showCpuProcessQueue(cpu *CpuProcessScheduler) {
-	fmt.Printf("Now, the CPU's process_queue is:\n")
 	if len(cpu.processesQueue) == 0 {
+		fmt.Printf("Now, the CPU's process_queue is:\n")
 		for i, pcb := range cpu.processesQueue {
 			fmt.Printf("%d: ", i)
 			showPCB(pcb)
 		}
 	} else {
-
+		fmt.Printf("Now, the CPU's process_queue is Null\n")
 	}
 }
 
@@ -124,6 +126,7 @@ func CpuHandleProcess(cpu *CpuProcessScheduler) {
 	if pcb.usedTime < pcb.execTime {
 		fmt.Printf("process still need to exec %d time\n", pcb.execTime-pcb.usedTime)
 		pcb.prior -= 1
+		InQueue(cpu, pcb)
 	} else {
 		fmt.Printf("process:%s is finished\n", pcb.name)
 		pcb.PCBStatus = Finish
@@ -136,16 +139,6 @@ func processIn(cpu *CpuProcessScheduler, pcb PCB) {
 	pcb.arriveTime = timeNow
 	InQueue(cpu, pcb)
 	fmt.Printf("CPU Status: %s...\nProcess: %s enter to the processes_queue...\n", cpu.cpuStatus, pcb.name)
-
-	if cpu.cpuStatus == Wait {
-		//go CpuHandleProcess(cpu)
-		CpuHandleProcess(cpu)
-	} else if cpu.cpuStatus == Run {
-		fmt.Printf("CPU Status: %s...\nprocess: %s enter to the processes_queue...\n", cpu.cpuStatus, pcb.name)
-		showCpuProcessQueue(cpu)
-	} else {
-		fmt.Printf("wt? cpu seems to be wrong, just check it's status\n")
-	}
 }
 
 func scheduleProcesses(cpu *CpuProcessScheduler, pcbs []PCB) {
@@ -159,15 +152,30 @@ func main() {
 		processesQueue: nil,
 		cpuStatus:      Wait,
 	}
-	pcb1 := PCB{
-		name:       "P1",
-		prior:      GenerateRandInt(100),
-		arriveTime: 0,
-		execTime:   10,
-		usedTime:   0,
-		PCBStatus:  Wait,
-	}
+
+	go func() {
+		for {
+			if <-ch {
+				if cpu.cpuStatus == Wait {
+					go CpuHandleProcess(&cpu)
+				} else if cpu.cpuStatus == Run {
+					fmt.Printf("CPU Status: Running...\n")
+					showCpuProcessQueue(&cpu)
+				} else {
+					fmt.Printf("wt? cpu seems to be wrong, just check it's status\n")
+					break
+				}
+			}
+		}
+	}()
+
+	pcb1 := PCB{name: "P1", prior: GenerateRandInt(100), arriveTime: 0, execTime: 10, usedTime: 0, PCBStatus: Wait}
+	pcb2 := PCB{name: "P2", prior: GenerateRandInt(100), arriveTime: 0, execTime: 6, usedTime: 0, PCBStatus: Wait}
+
 	//showCPU(&cpu)
-	//showPCB(pcb1)
+	//showPCB(pcb2)
 	processIn(&cpu, pcb1)
+	time.Sleep(3)
+	processIn(&cpu, pcb2)
+
 }
