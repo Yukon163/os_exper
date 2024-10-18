@@ -4,18 +4,15 @@ import (
 	"fmt"
 	"math/rand"
 	"sync"
-
-	//"sync"
 	"time"
 )
 
 var timeNow int
 var ch = make(chan int)
-
-// var ch1 = make(chan int)
 var wg = sync.WaitGroup{}
 
 type status int
+type algorithm int
 
 const (
 	Wait status = iota
@@ -31,6 +28,22 @@ func (s status) String() string {
 		return "Run"
 	case Finish:
 		return "Finish"
+	default:
+		return "Unknown"
+	}
+}
+
+const (
+	HPFS algorithm = iota //Highest Priority First Scheduling
+	FCFS                  //First Come First Service
+)
+
+func (algor algorithm) String() string {
+	switch algor {
+	case HPFS:
+		return "HPFS"
+	case FCFS:
+		return "FCFS"
 	default:
 		return "Unknown"
 	}
@@ -55,13 +68,13 @@ func showPCB(pcb PCB) {
 }
 
 type CpuProcessScheduler struct {
-	processesQueue []PCB
+	processesQueue []*PCB
 	cpuStatus      status
+	algorithm      algorithm
 }
 
 func InQueue(cpu *CpuProcessScheduler, pcb *PCB) {
-	//fmt.Printf("Process: %s move into queue", pcb.name)
-	cpu.processesQueue = append(cpu.processesQueue, *pcb)
+	cpu.processesQueue = append(cpu.processesQueue, pcb)
 	if cpu.cpuStatus == Wait {
 		fmt.Printf("%s come, CPU Status: Waiting...\n", pcb.name)
 		ch <- 1
@@ -77,7 +90,6 @@ func OutQueue(cpu *CpuProcessScheduler, pcb *PCB) {
 	for i, process := range cpu.processesQueue {
 		if process.name == pcb.name {
 			cpu.processesQueue = append(cpu.processesQueue[:i], cpu.processesQueue[i+1:]...)
-			//fmt.Printf("Process: %s removed from queue\n", pcb.name)
 			break
 		}
 	}
@@ -89,16 +101,22 @@ func showCpuProcessQueue(cpu *CpuProcessScheduler) {
 		fmt.Printf("Now, the CPU's process_queue is:\n")
 		for i, pcb := range cpu.processesQueue {
 			fmt.Printf("%d: ", i)
-			showPCB(pcb)
+			showPCB(*pcb)
 		}
-		HighestPriorProcess, _ := findHighestPriorProcess(cpu)
-		fmt.Printf("the HighestPriorProcess is %s\n", HighestPriorProcess.name)
+		switch cpu.algorithm {
+		case HPFS:
+			HighestPriorProcess, _ := getHighestPriorProcess(cpu)
+			fmt.Printf("the NextProcess is %s\n", HighestPriorProcess.name)
+		case FCFS:
+			NextProcess, _ := getFirstInProcess(cpu)
+			fmt.Printf("the NextProcess is %s\n", NextProcess.name)
+		}
 	} else {
 		fmt.Printf("Now, the CPU's process_queue is Null\n")
 	}
 }
 
-func findHighestPriorProcess(cpu *CpuProcessScheduler) (*PCB, bool) {
+func getHighestPriorProcess(cpu *CpuProcessScheduler) (*PCB, bool) {
 	if len(cpu.processesQueue) == 0 {
 		fmt.Printf("No processes queue\n")
 		return &PCB{}, false
@@ -109,7 +127,16 @@ func findHighestPriorProcess(cpu *CpuProcessScheduler) (*PCB, bool) {
 				highestPriorProcess = process
 			}
 		}
-		return &highestPriorProcess, true
+		return highestPriorProcess, true
+	}
+}
+
+func getFirstInProcess(cpu *CpuProcessScheduler) (*PCB, bool) {
+	if len(cpu.processesQueue) == 0 {
+		fmt.Printf("No processes queue\n")
+		return &PCB{}, false
+	} else {
+		return cpu.processesQueue[0], true
 	}
 }
 
@@ -117,7 +144,6 @@ func stimulateCpuExecTime(pcb *PCB) {
 	time.Sleep(10 * time.Millisecond) // 模拟cpu执行进程花费的时间片
 	pcb.usedTime += 1
 	timeNow += 1
-	//ch <- 1
 }
 
 func changeCpuStatus(cpu *CpuProcessScheduler, statusToChange status) {
@@ -126,8 +152,14 @@ func changeCpuStatus(cpu *CpuProcessScheduler, statusToChange status) {
 }
 
 func CpuHandleProcess(cpu *CpuProcessScheduler) {
-	//fmt.Printf("---------------%d-----------------\n", timeNow)
-	pcb, value := findHighestPriorProcess(cpu)
+	var pcb *PCB   // 假设这是进程控制块的类型
+	var value bool // 用于存储返回值
+	switch cpu.algorithm {
+	case HPFS:
+		pcb, value = getHighestPriorProcess(cpu)
+	case FCFS:
+		pcb, value = getFirstInProcess(cpu)
+	}
 	if !value {
 		fmt.Printf("Cpu's processes_queue is null...")
 		return
@@ -144,13 +176,18 @@ func CpuHandleProcess(cpu *CpuProcessScheduler) {
 	if pcb.usedTime < pcb.execTime {
 		fmt.Printf("process %s still need to exec %d time\n", pcb.name, pcb.execTime-pcb.usedTime)
 		pcb.prior -= 1
-		InQueue(cpu, pcb)
+		if cpu.algorithm == HPFS {
+			InQueue(cpu, pcb)
+		} else if cpu.algorithm == FCFS { //先来先服务是不中止的, 一个进程会一直运行到其停止, 通过将其加入到队首实现
+			cpu.processesQueue = append([]*PCB{pcb}, cpu.processesQueue...)
+		}
 	} else {
 		fmt.Printf("process:%s is finished\n", pcb.name)
 		pcb.PCBStatus = Finish
 		defer wg.Done()
 	}
 	changeCpuStatus(cpu, Wait)
+
 	OutQueue(cpu, pcb)
 	showCpuProcessQueue(cpu)
 	fmt.Printf("\n")
@@ -166,6 +203,7 @@ func main() {
 	cpu := CpuProcessScheduler{
 		processesQueue: nil,
 		cpuStatus:      Wait,
+		algorithm:      FCFS,
 	}
 
 	go func() {
@@ -178,10 +216,10 @@ func main() {
 		}
 	}()
 
-	pcb1 := PCB{name: "P1", prior: GenerateRandInt(20), arriveTime: 0, execTime: 10, usedTime: 0, PCBStatus: Wait}
-	pcb2 := PCB{name: "P2", prior: GenerateRandInt(20), arriveTime: 0, execTime: 6, usedTime: 0, PCBStatus: Wait}
+	pcb1 := PCB{name: "P1", prior: GenerateRandInt(20), arriveTime: 0, execTime: 4, usedTime: 0, PCBStatus: Wait}
+	pcb2 := PCB{name: "P2", prior: GenerateRandInt(20), arriveTime: 0, execTime: 5, usedTime: 0, PCBStatus: Wait}
 	pcb3 := PCB{name: "P3", prior: GenerateRandInt(20), arriveTime: 0, execTime: 4, usedTime: 0, PCBStatus: Wait}
-	pcb4 := PCB{name: "P4", prior: GenerateRandInt(20), arriveTime: 0, execTime: 8, usedTime: 0, PCBStatus: Wait}
+	pcb4 := PCB{name: "P4", prior: GenerateRandInt(20), arriveTime: 0, execTime: 2, usedTime: 0, PCBStatus: Wait}
 	pcb5 := PCB{name: "P5", prior: GenerateRandInt(20), arriveTime: 0, execTime: 3, usedTime: 0, PCBStatus: Wait}
 
 	showPCB(pcb1)
@@ -197,7 +235,6 @@ func main() {
 	time.Sleep(25 * time.Millisecond)
 	processIn(&cpu, &pcb4)
 	time.Sleep(25 * time.Millisecond)
-	//fmt.Printf("\n\n\nwt? at time %d P2 is already In?---------------------------------------------------\n\n\n", timeNow)
 	processIn(&cpu, &pcb5)
 
 	wg.Wait()
