@@ -184,10 +184,10 @@ func main() {
 	pcb5 := PCB{name: "P5", prior: GenerateRandInt(20), arriveTime: 0, execTime: 3, usedTime: 0, PCBStatus: Wait}
 
 	showPCB(pcb1)
-	//showPCB(pcb2)
-	//showPCB(pcb3)
-	//showPCB(pcb4)
-	//showPCB(pcb5)
+	showPCB(pcb2)
+	showPCB(pcb3)
+	showPCB(pcb4)
+	showPCB(pcb5)
 	processIn(&cpu, &pcb1)
 	time.Sleep(25 * time.Millisecond)
 	processIn(&cpu, &pcb2)
