@@ -62,9 +62,10 @@ func InQueue(cpu *CpuProcessScheduler, pcb *PCB) {
 	//fmt.Printf("Process: %s move into queue", pcb.name)
 	cpu.processesQueue = append(cpu.processesQueue, *pcb)
 	if cpu.cpuStatus == Wait {
+		fmt.Printf("%s come, CPU Status: Waiting...\n", pcb.name)
 		ch <- 1
 	} else if cpu.cpuStatus == Run {
-		fmt.Printf("CPU Status: Running...\n")
+		fmt.Printf("%s come, CPU Status: Running...\n", pcb.name)
 	} else {
 		fmt.Printf("wt? cpu seems to be wrong, just check it's status\n")
 		ch <- -1
@@ -137,9 +138,8 @@ func CpuHandleProcess(cpu *CpuProcessScheduler) {
 	changeCpuStatus(cpu, Run)
 	fmt.Printf("handling process: %s at %d, which is arrived at %d, enter to the processes_queue...\n", pcb.name, handleTime, arrivalTime)
 
-	fmt.Printf("start process: %s...\n", pcb.name)
+	fmt.Printf("handling process: %s...\n", pcb.name)
 	stimulateCpuExecTime(pcb)
-	//fmt.Printf("testttttttttttttttttttttt:%d\n", timeNow)
 	if pcb.usedTime < pcb.execTime {
 		fmt.Printf("process %s still need to exec %d time\n", pcb.name, pcb.execTime-pcb.usedTime)
 		pcb.prior -= 1
@@ -158,8 +158,6 @@ func CpuHandleProcess(cpu *CpuProcessScheduler) {
 func processIn(cpu *CpuProcessScheduler, pcb *PCB) {
 	pcb.arriveTime = timeNow
 	InQueue(cpu, pcb)
-	//fmt.Printf("CPU Status: %s...\nProcess: %s enter to the processes_queue...\n", cpu.cpuStatus, pcb.name)
-	//showCpuProcessQueue(cpu)
 	wg.Add(1)
 }
 
@@ -179,19 +177,27 @@ func main() {
 		}
 	}()
 
-	pcb1 := PCB{name: "P1", prior: GenerateRandInt(10), arriveTime: 0, execTime: 10, usedTime: 0, PCBStatus: Wait}
-	pcb2 := PCB{name: "P2", prior: GenerateRandInt(10), arriveTime: 0, execTime: 6, usedTime: 0, PCBStatus: Wait}
+	pcb1 := PCB{name: "P1", prior: GenerateRandInt(20), arriveTime: 0, execTime: 10, usedTime: 0, PCBStatus: Wait}
+	pcb2 := PCB{name: "P2", prior: GenerateRandInt(20), arriveTime: 0, execTime: 6, usedTime: 0, PCBStatus: Wait}
+	pcb3 := PCB{name: "P3", prior: GenerateRandInt(20), arriveTime: 0, execTime: 4, usedTime: 0, PCBStatus: Wait}
+	pcb4 := PCB{name: "P4", prior: GenerateRandInt(20), arriveTime: 0, execTime: 8, usedTime: 0, PCBStatus: Wait}
+	pcb5 := PCB{name: "P5", prior: GenerateRandInt(20), arriveTime: 0, execTime: 3, usedTime: 0, PCBStatus: Wait}
 
-	//showCPU(&cpu)
 	showPCB(pcb1)
-	showPCB(pcb2)
+	//showPCB(pcb2)
+	//showPCB(pcb3)
+	//showPCB(pcb4)
+	//showPCB(pcb5)
 	processIn(&cpu, &pcb1)
 	time.Sleep(25 * time.Millisecond)
-	fmt.Printf("\n\n\nwt? at time %d P2 is already In?---------------------------------------------------\n\n\n", timeNow)
 	processIn(&cpu, &pcb2)
+	time.Sleep(25 * time.Millisecond)
+	processIn(&cpu, &pcb3)
+	time.Sleep(25 * time.Millisecond)
+	processIn(&cpu, &pcb4)
+	time.Sleep(25 * time.Millisecond)
+	//fmt.Printf("\n\n\nwt? at time %d P2 is already In?---------------------------------------------------\n\n\n", timeNow)
+	processIn(&cpu, &pcb5)
 
-	//time.Sleep(20 * 1e9)
-	//fuck = 1
-	//go CpuHandleProcess(&cpu)
 	wg.Wait()
 }
