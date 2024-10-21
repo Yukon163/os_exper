@@ -1,15 +1,21 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"math/rand"
-	"sync"
+	"os"
+	"os/signal"
+	"syscall"
+
+	//"sync"
 	"time"
 )
 
 var timeNow int
 var ch = make(chan int)
-var wg = sync.WaitGroup{}
+
+//var wg = sync.WaitGroup{}
 
 type status int
 type algorithm int
@@ -184,7 +190,7 @@ func CpuHandleProcess(cpu *CpuProcessScheduler) {
 	} else {
 		fmt.Printf("process:%s is finished\n", pcb.name)
 		pcb.PCBStatus = Finish
-		defer wg.Done()
+		//defer wg.Done()
 	}
 	changeCpuStatus(cpu, Wait)
 
@@ -196,31 +202,37 @@ func CpuHandleProcess(cpu *CpuProcessScheduler) {
 func processIn(cpu *CpuProcessScheduler, pcb *PCB) {
 	pcb.arriveTime = timeNow
 	InQueue(cpu, pcb)
-	wg.Add(1)
+	//wg.Add(1)
 }
 
 func main() {
+	ctx, cancelFunc := context.WithCancel(context.Background())
+
 	cpu := CpuProcessScheduler{
 		processesQueue: nil,
 		cpuStatus:      Wait,
-		algorithm:      FCFS,
+		algorithm:      HPFS,
 	}
 
 	go func() {
 		for {
-			value := <-ch
-			if value == -1 {
-				break
+			select {
+			case <-ctx.Done():
+				cancelFunc()
+			case value := <-ch:
+				if value == -1 {
+					break
+				}
+				go CpuHandleProcess(&cpu)
 			}
-			go CpuHandleProcess(&cpu)
 		}
 	}()
 
-	pcb1 := PCB{name: "P1", prior: GenerateRandInt(20), arriveTime: 0, execTime: 4, usedTime: 0, PCBStatus: Wait}
-	pcb2 := PCB{name: "P2", prior: GenerateRandInt(20), arriveTime: 0, execTime: 5, usedTime: 0, PCBStatus: Wait}
-	pcb3 := PCB{name: "P3", prior: GenerateRandInt(20), arriveTime: 0, execTime: 4, usedTime: 0, PCBStatus: Wait}
-	pcb4 := PCB{name: "P4", prior: GenerateRandInt(20), arriveTime: 0, execTime: 2, usedTime: 0, PCBStatus: Wait}
-	pcb5 := PCB{name: "P5", prior: GenerateRandInt(20), arriveTime: 0, execTime: 3, usedTime: 0, PCBStatus: Wait}
+	pcb1 := PCB{name: "P1", prior: GenerateRandInt(20), execTime: 4, usedTime: 0, PCBStatus: Wait}
+	pcb2 := PCB{name: "P2", prior: GenerateRandInt(20), execTime: 5, usedTime: 0, PCBStatus: Wait}
+	pcb3 := PCB{name: "P3", prior: GenerateRandInt(20), execTime: 4, usedTime: 0, PCBStatus: Wait}
+	pcb4 := PCB{name: "P4", prior: GenerateRandInt(20), execTime: 2, usedTime: 0, PCBStatus: Wait}
+	pcb5 := PCB{name: "P5", prior: GenerateRandInt(20), execTime: 3, usedTime: 0, PCBStatus: Wait}
 
 	showPCB(pcb1)
 	showPCB(pcb2)
@@ -237,5 +249,9 @@ func main() {
 	time.Sleep(25 * time.Millisecond)
 	processIn(&cpu, &pcb5)
 
-	wg.Wait()
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+	cancelFunc()
+	//wg.Wait()
 }
