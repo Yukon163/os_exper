@@ -219,9 +219,10 @@ func main() {
 			select {
 			case <-ctx.Done():
 				cancelFunc()
+				return
 			case value := <-ch:
 				if value == -1 {
-					break
+					return
 				}
 				go CpuHandleProcess(&cpu)
 			}
