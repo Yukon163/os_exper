@@ -1,8 +1,12 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"math/rand"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 )
 
@@ -55,6 +59,7 @@ func showPCB(pcb PCB) {
 }
 
 type CpuProcessScheduler struct {
+	njmknu
 	PCBQueues []*processesQueue
 	cpuStatus status
 }
@@ -112,10 +117,10 @@ func showCpuProcessQueue(cpu *CpuProcessScheduler) {
 	fmt.Printf("Now, the CPU's PCB queues are:\n")
 	for i, PCBQueue := range cpu.PCBQueues {
 		if len(PCBQueue.Queue) == 0 {
-			fmt.Printf("Now, the CPU's PCBQueue%d is Null\n", i+1)
+			fmt.Printf("PCBQueue%d is Null\n", i+1)
 		} else {
+			fmt.Printf("PCBQueue%d:", i+1)
 			for j, pcb := range PCBQueue.Queue {
-				fmt.Printf("the PCB queue%d:\n", i+1)
 				fmt.Printf("%d: , ", j)
 				showPCB(*pcb)
 			}
@@ -124,7 +129,8 @@ func showCpuProcessQueue(cpu *CpuProcessScheduler) {
 }
 
 func getNextHandleProcess(cpu *CpuProcessScheduler) (*PCB, int, bool) {
-	for i, PCBQueue := range cpu.PCBQueues {
+	for i := len(cpu.PCBQueues) - 1; i >= 0; i-- {
+		PCBQueue := cpu.PCBQueues[i]
 		if len(PCBQueue.Queue) == 0 {
 			fmt.Printf("Now, the CPU's PCBQueue%d is Null\nLooking for the nextQueue...\n", i+1)
 			continue
@@ -177,10 +183,76 @@ func CpuHandleProcess(cpu *CpuProcessScheduler) {
 	fmt.Printf("\n")
 }
 
+func processIn(cpu *CpuProcessScheduler, pcb *PCB) {
+	pcb.arriveTime = timeNow
+	InQueue(cpu, pcb)
+}
+
 func main() {
+	ctx, cancelFunc := context.WithCancel(context.Background())
+
 	cpu := CpuProcessScheduler{
-		PCBQueues: []*processesQueue{&processesQueue{}, &processesQueue{}, &processesQueue{}},
-		cpuStatus: Wait, // 确保 Wait 是一个有效的 status 值
+		PCBQueues: []*processesQueue{&processesQueue{}, &processesQueue{}, &processesQueue{}}, // 三个空队列指针
+		cpuStatus: Wait,
 	}
+
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				cancelFunc()
+				return
+			case value := <-ch:
+				if value == -1 {
+					return
+				}
+				go CpuHandleProcess(&cpu)
+			}
+		}
+	}()
+
+	pcb1 := PCB{name: "P1", prior: 2, execTime: 4, usedTime: 0, PCBStatus: Wait}
+	pcb2 := PCB{name: "P2", prior: 1, execTime: 5, usedTime: 0, PCBStatus: Wait}
+	pcb3 := PCB{name: "P3", prior: 0, execTime: 4, usedTime: 0, PCBStatus: Wait}
+	pcb4 := PCB{name: "P4", prior: 2, execTime: 2, usedTime: 0, PCBStatus: Wait}
+	pcb5 := PCB{name: "P5", prior: 1, execTime: 3, usedTime: 0, PCBStatus: Wait}
+	pcb6 := PCB{name: "P6", prior: 0, execTime: 3, usedTime: 0, PCBStatus: Wait}
+	pcb7 := PCB{name: "P7", prior: 2, execTime: 3, usedTime: 0, PCBStatus: Wait}
+	pcb8 := PCB{name: "P8", prior: 1, execTime: 3, usedTime: 0, PCBStatus: Wait}
+	pcb9 := PCB{name: "P9", prior: 0, execTime: 3, usedTime: 0, PCBStatus: Wait}
+
+	showPCB(pcb1)
+	showPCB(pcb2)
+	showPCB(pcb3)
+	showPCB(pcb4)
+	showPCB(pcb5)
+	showPCB(pcb6)
+	showPCB(pcb7)
+	showPCB(pcb8)
+	showPCB(pcb9)
+
 	showCpuProcessQueue(&cpu)
+
+	processIn(&cpu, &pcb1)
+	time.Sleep(20 * time.Millisecond)
+	processIn(&cpu, &pcb2)
+	time.Sleep(20 * time.Millisecond)
+	processIn(&cpu, &pcb3)
+	time.Sleep(20 * time.Millisecond)
+	processIn(&cpu, &pcb4)
+	time.Sleep(20 * time.Millisecond)
+	processIn(&cpu, &pcb5)
+	time.Sleep(20 * time.Millisecond)
+	processIn(&cpu, &pcb6)
+	time.Sleep(20 * time.Millisecond)
+	processIn(&cpu, &pcb7)
+	time.Sleep(20 * time.Millisecond)
+	processIn(&cpu, &pcb8)
+	time.Sleep(20 * time.Millisecond)
+	processIn(&cpu, &pcb9)
+
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+	cancelFunc()
 }
