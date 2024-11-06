@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"math/rand"
 	"os"
 	"os/signal"
 	"syscall"
@@ -34,10 +33,10 @@ func (s status) String() string {
 	}
 }
 
-func GenerateRandInt(n int) int {
-	rand.New(rand.NewSource(time.Now().UnixNano()))
-	return rand.Intn(n)
-}
+//func GenerateRandInt(n int) int {
+//	rand.New(rand.NewSource(time.Now().UnixNano()))
+//	return rand.Intn(n)
+//}
 
 type PCB struct {
 	name       string
@@ -55,30 +54,33 @@ type processesQueue struct {
 }
 
 func showPCB(pcb PCB) {
-	fmt.Printf("Process Name: %s, PCB Status: %s, PCB Prior: %d\n", pcb.name, pcb.PCBStatus, pcb.prior)
+	fmt.Printf("Process Name: %s, PCB Status: %s, PCB Prior: %d\n", pcb.name, pcb.PCBStatus, pcb.prior+1)
 }
 
 type CpuProcessScheduler struct {
-	njmknu
 	PCBQueues []*processesQueue
 	cpuStatus status
 }
 
 func getCountFromPrior(prior int) int {
-	return prior // 可拓展，根据不同大小的prior获取不同的count，这里为了方便只使用prior作为count
+	return prior
 }
-func getPCBQueue(cpu *CpuProcessScheduler, QueueCount int) []*PCB {
-	return cpu.PCBQueues[QueueCount].Queue
+func getPCBQueue(cpu *CpuProcessScheduler, QueueCount int) *[]*PCB {
+	return &cpu.PCBQueues[QueueCount].Queue
 }
 
 func downgradePCBQueue(pcb *PCB) {
+	if pcb.prior == 0 {
+		return
+	}
+	fmt.Printf("%s's prior: %d->%d\n", pcb.name, pcb.prior+1, pcb.prior)
 	pcb.prior -= 1
 }
 
 func InQueue(cpu *CpuProcessScheduler, pcb *PCB) {
 	QueueCount := getCountFromPrior(pcb.prior) // 根据优先级获取队列
 	PCBQueue := getPCBQueue(cpu, QueueCount)
-	PCBQueue = append(PCBQueue, pcb)
+	*PCBQueue = append(*PCBQueue, pcb)
 	if cpu.cpuStatus == Wait {
 		fmt.Printf("%s come, CPU Status: Waiting...\n", pcb.name)
 		ch <- 1
@@ -91,26 +93,29 @@ func InQueue(cpu *CpuProcessScheduler, pcb *PCB) {
 }
 
 func OutQueue(cpu *CpuProcessScheduler, pcb *PCB) {
-	PCBQueue := getPCBQueue(cpu, getCountFromPrior(pcb.prior))
-	for i, process := range PCBQueue {
-		if process.name == pcb.name {
-			PCBQueue = append(PCBQueue[:i], PCBQueue[i+1:]...)
-			break
+	for j := len(cpu.PCBQueues) - 1; j >= 0; j-- {
+		PCBQueue := cpu.PCBQueues[j].Queue
+		for i := len(PCBQueue) - 1; i >= 0; i-- {
+			process := PCBQueue[i]
+			if process.name == pcb.name {
+				cpu.PCBQueues[j].Queue = append(PCBQueue[:i], PCBQueue[i+1:]...)
+				return
+			}
 		}
 	}
-	ch <- 1
 }
 
 func stimulateCpuExecTime(pcb *PCB, PCBQueue *processesQueue) {
 	time.Sleep(20 * time.Millisecond) // 模拟cpu执行进程花费的时间片
 	pcb.usedTime += 1
 	timeNow += 1
-	PCBQueue.maxTime += 1
+	PCBQueue.usedTime += 1
 }
 
 func changeCpuStatus(cpu *CpuProcessScheduler, statusToChange status) {
-	fmt.Printf("\nCPU Status: %s->%s \n", cpu.cpuStatus, statusToChange)
+	statusNow := cpu.cpuStatus
 	cpu.cpuStatus = statusToChange
+	fmt.Printf("\nCPU Status: %s->%s \n", statusNow, statusToChange)
 }
 
 func showCpuProcessQueue(cpu *CpuProcessScheduler) {
@@ -119,9 +124,9 @@ func showCpuProcessQueue(cpu *CpuProcessScheduler) {
 		if len(PCBQueue.Queue) == 0 {
 			fmt.Printf("PCBQueue%d is Null\n", i+1)
 		} else {
-			fmt.Printf("PCBQueue%d:", i+1)
+			fmt.Printf("PCBQueue%d:\nused time: %d\n", i+1, PCBQueue.usedTime)
 			for j, pcb := range PCBQueue.Queue {
-				fmt.Printf("%d: , ", j)
+				fmt.Printf("%d: ", j+1)
 				showPCB(*pcb)
 			}
 		}
@@ -129,16 +134,25 @@ func showCpuProcessQueue(cpu *CpuProcessScheduler) {
 }
 
 func getNextHandleProcess(cpu *CpuProcessScheduler) (*PCB, int, bool) {
+	var nextHandleProcess *PCB = nil
+	var isExistNext = false
+	var nextQueueCount = -1
 	for i := len(cpu.PCBQueues) - 1; i >= 0; i-- {
 		PCBQueue := cpu.PCBQueues[i]
 		if len(PCBQueue.Queue) == 0 {
 			fmt.Printf("Now, the CPU's PCBQueue%d is Null\nLooking for the nextQueue...\n", i+1)
 			continue
 		} else {
-			return PCBQueue.Queue[0], i, true
+			if PCBQueue.usedTime != 0 {
+				return PCBQueue.Queue[0], i, true
+			} else if nextHandleProcess == nil {
+				nextHandleProcess = PCBQueue.Queue[0]
+				isExistNext = true
+				nextQueueCount = i
+			}
 		}
 	}
-	return nil, -1, false
+	return nextHandleProcess, nextQueueCount, isExistNext
 }
 
 func CpuHandleProcess(cpu *CpuProcessScheduler) {
@@ -151,9 +165,8 @@ func CpuHandleProcess(cpu *CpuProcessScheduler) {
 		fmt.Printf("Cpu's PCBQueues are null...")
 		return
 	}
-	proQueue := cpu.PCBQueues[QueueCount]
-
 	changeCpuStatus(cpu, Run)
+	proQueue := cpu.PCBQueues[QueueCount]
 
 	arrivalTime := pcb.arriveTime
 	handleTime := timeNow
@@ -161,30 +174,38 @@ func CpuHandleProcess(cpu *CpuProcessScheduler) {
 
 	fmt.Printf("handling process: %s...\n", pcb.name)
 	stimulateCpuExecTime(pcb, proQueue)
-
+	OutQueue(cpu, pcb)
 	if pcb.usedTime < pcb.execTime {
-		fmt.Printf("process %s still need to exec %d time\n", pcb.name, pcb.execTime-pcb.usedTime)
+		fmt.Printf("process %s still need to exec %d time, prior is %d\n", pcb.name, pcb.execTime-pcb.usedTime, pcb.prior+1)
 		if proQueue.usedTime < proQueue.maxTime { // 一直运行到当前队列的MaxTime, 通过将其加入到当前队列队首实现
 			proQueue.Queue = append([]*PCB{pcb}, proQueue.Queue...)
+			//proQueue.usedTime += 1
 		} else {
 			downgradePCBQueue(pcb)
 			proQueue.usedTime = 0
+			InQueue(cpu, pcb)
 		}
 	} else {
 		fmt.Printf("process:%s is finished\n", pcb.name)
 		pcb.PCBStatus = Finish
 		proQueue.usedTime = 0 // 任务完成同样需要将队列的使用时间清空
-		//defer wg.Done()
 	}
-	changeCpuStatus(cpu, Wait)
 
-	OutQueue(cpu, pcb)
+	changeCpuStatus(cpu, Wait)
+	ch <- 1
 	showCpuProcessQueue(cpu)
 	fmt.Printf("\n")
 }
 
 func processIn(cpu *CpuProcessScheduler, pcb *PCB) {
 	pcb.arriveTime = timeNow
+	QueueCount := getCountFromPrior(pcb.prior)
+	for count, PCBQueue := range cpu.PCBQueues {
+		if PCBQueue.usedTime != 0 && count < QueueCount {
+			PCBQueue.usedTime = 0
+			break
+		}
+	}
 	InQueue(cpu, pcb)
 }
 
@@ -192,7 +213,11 @@ func main() {
 	ctx, cancelFunc := context.WithCancel(context.Background())
 
 	cpu := CpuProcessScheduler{
-		PCBQueues: []*processesQueue{&processesQueue{}, &processesQueue{}, &processesQueue{}}, // 三个空队列指针
+		PCBQueues: []*processesQueue{ //与上次实验不同的是这里添加了显式初始化 maxTime 和 usedTime 的代码
+			{Queue: []*PCB{}, maxTime: 3, usedTime: 0}, // 1
+			{Queue: []*PCB{}, maxTime: 4, usedTime: 0}, // 2
+			{Queue: []*PCB{}, maxTime: 5, usedTime: 0}, // 3
+		},
 		cpuStatus: Wait,
 	}
 
@@ -214,42 +239,26 @@ func main() {
 	pcb1 := PCB{name: "P1", prior: 2, execTime: 4, usedTime: 0, PCBStatus: Wait}
 	pcb2 := PCB{name: "P2", prior: 1, execTime: 5, usedTime: 0, PCBStatus: Wait}
 	pcb3 := PCB{name: "P3", prior: 0, execTime: 4, usedTime: 0, PCBStatus: Wait}
-	pcb4 := PCB{name: "P4", prior: 2, execTime: 2, usedTime: 0, PCBStatus: Wait}
+	pcb4 := PCB{name: "P4", prior: 2, execTime: 11, usedTime: 0, PCBStatus: Wait}
 	pcb5 := PCB{name: "P5", prior: 1, execTime: 3, usedTime: 0, PCBStatus: Wait}
-	pcb6 := PCB{name: "P6", prior: 0, execTime: 3, usedTime: 0, PCBStatus: Wait}
-	pcb7 := PCB{name: "P7", prior: 2, execTime: 3, usedTime: 0, PCBStatus: Wait}
-	pcb8 := PCB{name: "P8", prior: 1, execTime: 3, usedTime: 0, PCBStatus: Wait}
-	pcb9 := PCB{name: "P9", prior: 0, execTime: 3, usedTime: 0, PCBStatus: Wait}
-
-	showPCB(pcb1)
-	showPCB(pcb2)
-	showPCB(pcb3)
-	showPCB(pcb4)
-	showPCB(pcb5)
-	showPCB(pcb6)
-	showPCB(pcb7)
-	showPCB(pcb8)
-	showPCB(pcb9)
+	pcb6 := PCB{name: "P6", prior: 0, execTime: 6, usedTime: 0, PCBStatus: Wait}
+	pcb7 := PCB{name: "P7", prior: 2, execTime: 10, usedTime: 0, PCBStatus: Wait}
 
 	showCpuProcessQueue(&cpu)
 
 	processIn(&cpu, &pcb1)
-	time.Sleep(20 * time.Millisecond)
+	time.Sleep(25 * time.Millisecond)
 	processIn(&cpu, &pcb2)
 	time.Sleep(20 * time.Millisecond)
 	processIn(&cpu, &pcb3)
-	time.Sleep(20 * time.Millisecond)
+	time.Sleep(25 * time.Millisecond)
 	processIn(&cpu, &pcb4)
 	time.Sleep(20 * time.Millisecond)
 	processIn(&cpu, &pcb5)
-	time.Sleep(20 * time.Millisecond)
+	time.Sleep(25 * time.Millisecond)
 	processIn(&cpu, &pcb6)
-	time.Sleep(20 * time.Millisecond)
+	time.Sleep(200 * time.Millisecond)
 	processIn(&cpu, &pcb7)
-	time.Sleep(20 * time.Millisecond)
-	processIn(&cpu, &pcb8)
-	time.Sleep(20 * time.Millisecond)
-	processIn(&cpu, &pcb9)
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
